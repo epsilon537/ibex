@@ -307,8 +307,8 @@ module ibex_if_stage import ibex_pkg::*; #(
         .busy_o              ( prefetch_busy              ),
         .ecc_error_o         ( icache_ecc_error_o         )
     );
-  end else begin : gen_prefetch_buffer
-    // prefetch buffer, caches a fixed number of instructions
+  end 
+  else begin : gen_prefetch_buffer
     ibex_prefetch_buffer #(
       .ResetAll        (ResetAll)
     ) prefetch_buffer_i (
@@ -355,7 +355,7 @@ module ibex_if_stage import ibex_pkg::*; #(
     assign ic_data_wdata_o       = 'b0;
     assign icache_ecc_error_o    = 'b0;
 
-`ifndef SYNTHESIS
+`ifdef DO_NOT_INCLUDE //ndef SYNTHESIS
     // If we don't instantiate an icache and this is a simulation then we have a problem because the
     // simulator might discard the icache module entirely, including some DPI exports that it
     // implies. This then causes problems for linking against C++ testbench code that expected them.
