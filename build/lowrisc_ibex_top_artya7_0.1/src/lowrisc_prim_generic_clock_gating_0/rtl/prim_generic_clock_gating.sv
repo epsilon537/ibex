@@ -6,7 +6,7 @@
 //
 // The logic assumes that en_i is synchronized (so the instantiation site might need to put a
 // synchronizer before en_i).
-
+// verilator lint_off UNUSED
 module prim_generic_clock_gating #(
   parameter bit NoFpgaGate = 1'b0, // this parameter has no function in generic
   parameter bit FpgaBufGlobal = 1'b1 // this parameter has no function in generic
@@ -26,3 +26,4 @@ module prim_generic_clock_gating #(
   assign clk_o = en_latch & clk_i;
 
 endmodule
+// verilator lint_on UNUSED

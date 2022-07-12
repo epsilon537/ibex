@@ -3,6 +3,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
+// verilator lint_off UNUSED
 /**
  * Package with constants used by Ibex
  */
@@ -651,3 +652,4 @@ package ibex_pkg;
   parameter fetch_enable_t FetchEnableOn  = 4'b0101;
   parameter fetch_enable_t FetchEnableOff = 4'b1010;
 endpackage
+// verilator lint_on UNUSED

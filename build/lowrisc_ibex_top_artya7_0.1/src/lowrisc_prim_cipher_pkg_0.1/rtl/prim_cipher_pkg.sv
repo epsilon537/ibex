@@ -14,6 +14,7 @@
 //             - https://eprint.iacr.org/2015/372.pdf
 //             - https://eprint.iacr.org/2014/656.pdf
 
+// verilator lint_off UNUSED
 package prim_cipher_pkg;
 
   ///////////////////
@@ -395,3 +396,4 @@ package prim_cipher_pkg;
   endfunction : perm_64bit
 
 endpackage : prim_cipher_pkg
+// verilator lint_on UNUSED

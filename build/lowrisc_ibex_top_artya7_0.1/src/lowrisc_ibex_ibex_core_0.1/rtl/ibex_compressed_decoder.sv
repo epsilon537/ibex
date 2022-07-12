@@ -24,10 +24,7 @@ module ibex_compressed_decoder (
 );
   import ibex_pkg::*;
 
-  // valid_i indicates if instr_i is valid and is used for assertions only.
-  // The following signal is used to avoid possible lint errors.
-  logic unused_valid;
-  assign unused_valid = valid_i;
+   logic unused = &{1'b0, clk_i, rst_ni, valid_i, 1'b0}; //Pacifying verilator
 
   ////////////////////////
   // Compressed decoder //

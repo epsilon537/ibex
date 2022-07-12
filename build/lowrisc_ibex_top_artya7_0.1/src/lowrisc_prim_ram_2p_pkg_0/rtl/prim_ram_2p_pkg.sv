@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 //
-
+// verilator lint_off UNUSED
 package prim_ram_2p_pkg;
 
   typedef struct packed {
@@ -20,3 +20,4 @@ package prim_ram_2p_pkg;
   parameter ram_2p_cfg_t RAM_2P_CFG_DEFAULT = '0;
 
 endpackage // prim_ram_2p_pkg
+// verilator lint_on UNUSED
