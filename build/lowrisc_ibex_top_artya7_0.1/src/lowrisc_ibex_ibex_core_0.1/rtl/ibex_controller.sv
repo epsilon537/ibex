@@ -163,15 +163,27 @@ module ibex_controller #(
   logic instr_fetch_err;
 
 `ifndef SYNTHESIS
+  logic [31:0]               prev_pc_id_i;
+  initial prev_pc_id_i = 32'b0;
+
   // synopsys translate_off
   // make sure we are called later so that we do not generate messages for
   // glitches
   always_ff @(negedge clk_i) begin
+    prev_pc_id_i <= ibex_id_stage.pc_id_i;
     // print warning in case of decoding errors
     if ((ctrl_fsm_cs == DECODE) && instr_valid_i && !instr_fetch_err_i && illegal_insn_d) begin
       $display("%t: Illegal instruction (hart %0x) at PC 0x%h: 0x%h", $time, ibex_core.hart_id_i,
                ibex_id_stage.pc_id_i, ibex_id_stage.instr_rdata_i);
     end
+`ifdef TRACE_ALL_INSTRUCTIONS
+    else if ((ctrl_fsm_cs == DECODE) && 
+              instr_valid_i && !instr_fetch_err_i && !illegal_insn_d &&
+              (ibex_id_stage.pc_id_i != prev_pc_id_i)) begin
+      $display("%t: Instruction (hart %0x) at PC 0x%h: 0x%h", $time, ibex_core.hart_id_i,
+               ibex_id_stage.pc_id_i, ibex_id_stage.instr_rdata_i);
+    end
+`endif
   end
   // synopsys translate_on
 `endif
