@@ -29,8 +29,6 @@ class mem_bkdr_util extends uvm_object;
   `define HAS_ECC (!(err_detection_scheme inside {ErrDetectionNone, ParityEven, ParityOdd}))
   `define HAS_PARITY (err_detection_scheme inside {ParityEven, ParityOdd})
 
-  // TODO: Indicates whether the memory implements scrambling.
-
   // Other memory specifics derived from the settings above.
   protected uint32_t data_width;  // ignoring ECC bits
   protected uint32_t byte_width;
@@ -39,6 +37,9 @@ class mem_bkdr_util extends uvm_object;
   protected uint32_t addr_lsb;
   protected uint32_t addr_width;
   protected uint32_t byte_addr_width;
+
+  // Address range of this memory in the system address map.
+  protected addr_range_t addr_range;
 
   // Indicates the maximum number of errors that can be injected.
   //
@@ -61,7 +62,7 @@ class mem_bkdr_util extends uvm_object;
   // package.
   function new(string name = "", string path, int unsigned depth,
                longint unsigned n_bits, err_detection_e err_detection_scheme,
-               int extra_bits_per_subword = 0);
+               int extra_bits_per_subword = 0, int unsigned system_base_addr = 0);
 
     bit res;
     super.new(name);
@@ -111,6 +112,8 @@ class mem_bkdr_util extends uvm_object;
     addr_lsb   = $clog2(bytes_per_word);
     addr_width = $clog2(depth);
     byte_addr_width = addr_width + addr_lsb;
+    addr_range.start_addr = system_base_addr;
+    addr_range.end_addr = system_base_addr + size_bytes - 1;
     max_errors = width;
     if (name == "") set_name({path, "::mem_bkdr_util"});
     `uvm_info(`gfn, this.convert2string(), UVM_MEDIUM)
@@ -129,7 +132,9 @@ class mem_bkdr_util extends uvm_object;
             $sformatf("addr_lsb = %0d\n", addr_lsb),
             $sformatf("addr_width = %0d\n", addr_width),
             $sformatf("byte_addr_width = %0d\n", byte_addr_width),
-            $sformatf("max_errors = %0d\n", max_errors)};
+            $sformatf("max_errors = %0d\n", max_errors),
+            $sformatf("addr_range.start_addr = 0x%0h\n", addr_range.start_addr),
+            $sformatf("addr_range.end_addr = 0x%0h\n", addr_range.end_addr)};
   endfunction
 
   function string get_path();
@@ -176,6 +181,10 @@ class mem_bkdr_util extends uvm_object;
     return byte_addr_width;
   endfunction
 
+  function bit is_valid_addr(int unsigned system_addr);
+    return system_addr inside {[addr_range.start_addr:addr_range.end_addr]};
+  endfunction
+
   function string get_file();
     return file;
   endfunction
@@ -199,8 +208,6 @@ class mem_bkdr_util extends uvm_object;
   // Returns the entire width of the memory at the given address, including the ECC bits. The data
   // returned is 'raw' i.e. it includes the parity bits. It also does not de-scramble the data if
   // encryption is enabled.
-  //
-  // TODO: Factor in encryption into this function itself?
   virtual function uvm_hdl_data_t read(bit [bus_params_pkg::BUS_AW-1:0] addr);
     bit res;
     uint32_t index;
@@ -570,6 +577,9 @@ class mem_bkdr_util extends uvm_object;
 
   // Wrapper function for encrypted ROM reads.
   `include "mem_bkdr_util__rom.sv"
+
+  // Wrapper function for encrypted FLASH writes.
+  `include "mem_bkdr_util__flash.sv"
 
   `undef HAS_ECC
   `undef HAS_PARITY

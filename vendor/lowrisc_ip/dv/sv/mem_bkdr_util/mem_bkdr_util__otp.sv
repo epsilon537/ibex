@@ -9,7 +9,16 @@ virtual function void otp_write_lc_partition_state(lc_ctrl_state_pkg::lc_state_e
   for (int i = 0; i < LcStateSize; i += 4) begin
     write32(i + LcStateOffset, lc_state[i*8+:32]);
   end
-endfunction
+endfunction : otp_write_lc_partition_state
+
+virtual function lc_ctrl_state_pkg::lc_state_e otp_read_lc_partition_state();
+  lc_ctrl_state_pkg::lc_state_e lc_state;
+  for (int i = 0; i < LcStateSize; i += 4) begin
+    lc_state[i*8 +: 32] = read32(i + LcStateOffset);
+  end
+
+  return lc_state;
+endfunction : otp_read_lc_partition_state
 
 virtual function void otp_write_lc_partition_cnt(lc_ctrl_state_pkg::lc_cnt_e lc_cnt);
   for (int i = 0; i < LcTransitionCntSize; i += 4) begin
@@ -53,6 +62,36 @@ virtual function void otp_write_secret0_partition(
   write64(Secret0DigestOffset, digest);
 endfunction
 
+virtual function void otp_write_secret1_partition(
+    bit [FlashAddrKeySeedSize*8-1:0] flash_addr_key_seed,
+    bit [FlashDataKeySeedSize*8-1:0] flash_data_key_seed,
+    bit [SramDataKeySeedSize*8-1:0] sram_data_key_seed);
+  bit [Secret1DigestSize*8-1:0] digest;
+
+  bit [FlashAddrKeySeedSize*8-1:0] scrambled_flash_addr_key;
+  bit [FlashDataKeySeedSize*8-1:0] scrambled_flash_data_key;
+  bit [SramDataKeySeedSize*8-1:0] scrambled_sram_data_key;
+  bit [bus_params_pkg::BUS_DW-1:0] secret_data[$];
+
+  for (int i = 0; i < FlashAddrKeySeedSize; i += 8) begin
+    scrambled_flash_addr_key[i*8+:64] = scramble_data(flash_addr_key_seed[i*8+:64], Secret1Idx);
+    write64(i + FlashAddrKeySeedOffset, scrambled_flash_addr_key[i*8+:64]);
+  end
+  for (int i = 0; i < FlashDataKeySeedSize; i += 8) begin
+    scrambled_flash_data_key[i*8+:64] = scramble_data(flash_data_key_seed[i*8+:64], Secret1Idx);
+    write64(i + FlashDataKeySeedOffset, scrambled_flash_data_key[i*8+:64]);
+  end
+  for (int i = 0; i < SramDataKeySeedSize; i += 8) begin
+    scrambled_sram_data_key[i*8+:64] = scramble_data(sram_data_key_seed[i*8+:64], Secret1Idx);
+    write64(i + SramDataKeySeedOffset, scrambled_sram_data_key[i*8+:64]);
+  end
+
+  secret_data = {<<32 {scrambled_sram_data_key, scrambled_flash_data_key, scrambled_flash_addr_key}};
+  digest = cal_digest(Secret1Idx, secret_data);
+
+  write64(Secret1DigestOffset, digest);
+endfunction
+
 virtual function void otp_write_secret2_partition(bit [RmaTokenSize*8-1:0] rma_unlock_token,
                                                   bit [CreatorRootKeyShare0Size*8-1:0] creator_root_key0,
                                                   bit [CreatorRootKeyShare1Size*8-1:0] creator_root_key1
@@ -84,15 +123,11 @@ virtual function void otp_write_secret2_partition(bit [RmaTokenSize*8-1:0] rma_u
   write64(Secret2DigestOffset, digest);
 endfunction
 
-virtual function void otp_write_hw_cfg_partition(
-    bit [DeviceIdSize*8-1:0] device_id, bit [ManufStateSize*8-1:0] manuf_state,
-    bit [EnSramIfetchSize*8-1:0] en_sram_ifetch,
-    bit [EnCsrngSwAppReadSize*8-1:0] en_csrng_sw_app_read,
-    bit [EnEntropySrcFwReadSize*8-1:0] en_entropy_src_fw_read,
-    bit [EnEntropySrcFwOverSize*8-1:0] en_entropy_src_fw_over);
-  bit [HwCfgDigestSize*8-1:0] digest;
+virtual function void otp_write_hw_cfg0_partition(
+    bit [DeviceIdSize*8-1:0] device_id, bit [ManufStateSize*8-1:0] manuf_state);
+  bit [HwCfg0DigestSize*8-1:0] digest;
 
-  bit [bus_params_pkg::BUS_DW-1:0] hw_cfg_data[$];
+  bit [bus_params_pkg::BUS_DW-1:0] hw_cfg0_data[$];
 
   for (int i = 0; i < DeviceIdSize; i += 4) begin
     write32(i + DeviceIdOffset, device_id[i*8+:32]);
@@ -100,12 +135,50 @@ virtual function void otp_write_hw_cfg_partition(
   for (int i = 0; i < ManufStateSize; i += 4) begin
     write32(i + ManufStateOffset, manuf_state[i*8+:32]);
   end
-  write32(EnSramIfetchOffset,
-          {en_entropy_src_fw_over, en_entropy_src_fw_read, en_csrng_sw_app_read, en_sram_ifetch});
 
-  hw_cfg_data = {<<32 {32'h0, en_entropy_src_fw_over, en_entropy_src_fw_read,
-                       en_csrng_sw_app_read, en_sram_ifetch, manuf_state, device_id}};
-  digest = cal_digest(HwCfgIdx, hw_cfg_data);
+  hw_cfg0_data = {<<32 {32'h0, manuf_state, device_id}};
+  digest = cal_digest(HwCfg0Idx, hw_cfg0_data);
 
-  write64(HwCfgDigestOffset, digest);
+  write64(HwCfg0DigestOffset, digest);
+endfunction
+
+virtual function void otp_write_hw_cfg1_partition(
+    bit [EnCsrngSwAppReadSize*8-1:0] en_csrng_sw_app_read,
+    bit [EnSramIfetchSize*8-1:0] en_sram_ifetch);
+  bit [HwCfg1DigestSize*8-1:0] digest;
+
+  bit [bus_params_pkg::BUS_DW-1:0] hw_cfg1_data[$];
+
+  write32(EnSramIfetchOffset, {en_csrng_sw_app_read, en_sram_ifetch});
+
+  hw_cfg1_data = {<<32 {32'h0, en_csrng_sw_app_read, en_sram_ifetch}};
+  digest = cal_digest(HwCfg1Idx, hw_cfg1_data);
+
+  write64(HwCfg1DigestOffset, digest);
+endfunction
+
+// Functions that clear the provisioning state of the buffered partitions.
+// This is useful in tests that make front-door accesses for provisioning purposes.
+virtual function void otp_clear_secret0_partition();
+  for (int i = 0; i < Secret0Size; i += 4) begin
+    write32(i + Secret0Offset, 32'h0);
+  end
+endfunction
+
+virtual function void otp_clear_secret1_partition();
+  for (int i = 0; i < Secret1Size; i += 4) begin
+    write32(i + Secret1Offset, 32'h0);
+  end
+endfunction
+
+virtual function void otp_clear_secret2_partition();
+  for (int i = 0; i < Secret2Size; i += 4) begin
+    write32(i + Secret2Offset, 32'h0);
+  end
+endfunction
+
+virtual function void otp_clear_hw_cfg0_partition();
+  for (int i = 0; i < HwCfg0Size; i += 4) begin
+    write32(i + HwCfg0Offset, 32'h0);
+  end
 endfunction

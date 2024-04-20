@@ -56,8 +56,16 @@ class dv_base_reg_block extends uvm_reg_block;
   // Custom RAL models may support sub-word CSR writes smaller than CSR width.
   protected bit supports_sub_word_csr_writes = 1'b0;
 
+  // Enables functional coverage of comportable IP-specific specialized registers, such as regwen
+  // and mubi. This flag can only be disabled before invoking `create_dv_reg_cov`.
+  protected bit en_dv_reg_cov = 1;
+
   bit has_unmapped_addrs;
   addr_range_t unmapped_addr_ranges[$];
+
+  // Lookup table for alias registers and fields.
+  string register_alias_lookup[string];
+  string field_alias_lookup[string];
 
   function new (string name = "", int has_coverage = UVM_NO_COVERAGE);
     super.new(name, has_coverage);
@@ -109,6 +117,20 @@ class dv_base_reg_block extends uvm_reg_block;
     `uvm_fatal(`gfn, "this method is not supposed to be called directly!")
   endfunction
 
+  // This function is invoked at the end of `build` method in uvm_reg_base.sv template to create
+  // IP-specific functional coverage for this block and its registers and fields.
+  function void create_cov();
+    dv_base_reg_block blks[$];
+    dv_base_reg regs[$];
+
+    get_dv_base_reg_blocks(blks);
+    foreach (blks[i]) blks[i].create_cov();
+
+    get_dv_base_regs(regs);
+    foreach (regs[i]) regs[i].create_cov();
+    // Create block-specific covergroups here.
+  endfunction
+
   function void get_dv_base_reg_blocks(ref dv_base_reg_block blks[$]);
     uvm_reg_block uvm_blks[$];
     this.get_blocks(uvm_blks);
@@ -139,6 +161,12 @@ class dv_base_reg_block extends uvm_reg_block;
     end
   endfunction
 
+  function bit has_shadowed_regs();
+    dv_base_reg regs[$];
+    get_shadowed_regs(regs);
+    return (regs.size() > 0);
+  endfunction
+
   // Internal function, used to compute the address mask for this register block.
   //
   // This is quite an expensive computation, so we memoize the results in addr_mask[map].
@@ -149,10 +177,14 @@ class dv_base_reg_block extends uvm_reg_block;
     uvm_reg_block  blocks[$];
     int unsigned   alignment;
 
-    // TODO: assume IP only contains 1 reg block, find a better way to handle chip-level and IP
-    // with multiple reg blocks
+    // Assumption:
+    // Only chip-level RAL has multiple sub reg_blocks. Its addr_mask is '1
+    // In block-level, we have one RAL for one TLUL interface. We don't put multiple reg_block in a
+    // RAL, as UVM RAL can't handle the case that each sub-block uses a different map:
+    //  - ral.blk1 -> use map_TL1
+    //  - ral.blk2 -> use map_TL2
     get_blocks(blocks);
-    if (blocks.size > 0) begin
+    if (blocks.size > 0) begin // if true, this is a chip-level RAL
       addr_mask[map] = '1;
       return;
     end
@@ -376,6 +408,41 @@ class dv_base_reg_block extends uvm_reg_block;
 
     get_dv_base_reg_blocks(subblks);
     foreach (subblks[i]) subblks[i].set_default_map_w_subblks_by_name(map_name);
+  endfunction
+
+  // this overrides the get_reg_by_name function
+  function dv_base_reg get_reg_by_name(string name);
+    dv_base_reg retval;
+    if (register_alias_lookup.exists(name)) begin
+      `downcast(retval, super.get_reg_by_name(register_alias_lookup[name]))
+    end else begin
+      `downcast(retval, super.get_reg_by_name(name))
+    end
+    return retval;
+  endfunction
+
+  // this overrides the get_field_by_name function
+  // note however that this function is only meaningful if the fields are unique within a regblock!
+  function dv_base_reg_field get_field_by_name(string name);
+    dv_base_reg_field retval;
+    if (field_alias_lookup.exists(name)) begin
+      `downcast(retval, super.get_field_by_name(field_alias_lookup[name]))
+    end else begin
+      `downcast(retval, super.get_field_by_name(name))
+    end
+    return retval;
+  endfunction
+
+  function void set_en_dv_reg_cov(bit val);
+    uvm_reg csrs[$];
+    get_registers(csrs);
+    `DV_CHECK_FATAL(!csrs.size(),
+        "Cannot set en_dv_base_reg_cov when covergroups are built already!")
+    en_dv_reg_cov = val;
+  endfunction
+
+  function bit get_en_dv_reg_cov();
+    return en_dv_reg_cov;
   endfunction
 
 endclass

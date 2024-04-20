@@ -32,7 +32,6 @@ module tb #(
   localparam int unsigned LineSizeECC = BusSizeECC * IC_LINE_BEATS;
   localparam int unsigned TagSizeECC  = ICacheECC ? (IC_TAG_SIZE + 6) : IC_TAG_SIZE;
   localparam int unsigned NumAddrScrRounds  = 2;
-  localparam int unsigned NumDiffRounds     = NumAddrScrRounds;
 
   ibex_icache_ram_if #(
     .TagSizeECC(TagSizeECC),
@@ -91,6 +90,8 @@ module tb #(
       .ic_data_wdata_o     ( ram_if.ic_data_wdata       ),
       .ic_data_rdata_i     ( ram_if.ic_data_rdata_o     ),
       .ic_scr_key_valid_i  ( scramble_key_valid_q       ),
+      // TODO: Hook up to monitor and appropriate checking
+      .ic_scr_key_req_o    (                            ),
 
       // TODO: Probe this and verify functionality
       .ecc_error_o         ( ram_if.ecc_err             )
@@ -135,9 +136,7 @@ module tb #(
       .Depth            (IC_NUM_LINES),
       .DataBitsPerMask  (TagSizeECC),
       .EnableParity     (0),
-      .DiffWidth        (TagSizeECC),
-      .NumAddrScrRounds (NumAddrScrRounds),
-      .NumDiffRounds    (NumDiffRounds)
+      .NumAddrScrRounds (NumAddrScrRounds)
     ) tag_bank (
       .clk_i       (clk),
       .rst_ni      (rst_n),
@@ -169,9 +168,7 @@ module tb #(
       .DataBitsPerMask    (LineSizeECC),
       .EnableParity       (0),
       .ReplicateKeyStream (1),
-      .DiffWidth          (LineSizeECC),
-      .NumAddrScrRounds   (NumAddrScrRounds),
-      .NumDiffRounds      (NumDiffRounds)
+      .NumAddrScrRounds   (NumAddrScrRounds)
     ) data_bank (
       .clk_i       (clk),
       .rst_ni      (rst_n),
@@ -198,7 +195,7 @@ module tb #(
   end
 
 
-  // Initiate push pull interface for the OTP<->OTBN connections
+  // Initiate push pull interface for connection between Icache and a scrambling key provider.
   push_pull_if #(
     .DeviceDataWidth(194)
   ) scrambling_key_if (

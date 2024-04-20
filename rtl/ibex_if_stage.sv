@@ -11,6 +11,7 @@
  */
 
 `include "prim_assert.sv"
+`include "dv_fcov_macros.svh"
 
 module ibex_if_stage import ibex_pkg::*; #(
   parameter int unsigned DmHaltAddr        = 32'h1A110800,
@@ -56,6 +57,7 @@ module ibex_if_stage import ibex_pkg::*; #(
   output logic [LineSizeECC-1:0]      ic_data_wdata_o,
   input  logic [LineSizeECC-1:0]      ic_data_rdata_i [IC_NUM_WAYS],
   input  logic                        ic_scr_key_valid_i,
+  output logic                        ic_scr_key_req_o,
 
   // output of ID stage
   output logic                        instr_valid_id_o,         // instr in IF-ID is valid
@@ -301,6 +303,7 @@ module ibex_if_stage import ibex_pkg::*; #(
         .ic_data_wdata_o     ( ic_data_wdata_o            ),
         .ic_data_rdata_i     ( ic_data_rdata_i            ),
         .ic_scr_key_valid_i  ( ic_scr_key_valid_i         ),
+        .ic_scr_key_req_o    ( ic_scr_key_req_o           ),
 
         .icache_enable_i     ( icache_enable_i            ),
         .icache_inval_i      ( icache_inval_i             ),
@@ -353,6 +356,7 @@ module ibex_if_stage import ibex_pkg::*; #(
     assign ic_data_write_o       = 'b0;
     assign ic_data_addr_o        = 'b0;
     assign ic_data_wdata_o       = 'b0;
+    assign ic_scr_key_req_o      = 'b0;
     assign icache_ecc_error_o    = 'b0;
 
 `ifdef DO_NOT_INCLUDE //ndef SYNTHESIS
@@ -383,13 +387,13 @@ module ibex_if_stage import ibex_pkg::*; #(
   // An error can come from the instruction address, or the next instruction address for unaligned,
   // uncompressed instructions.
   assign if_instr_pmp_err = pmp_err_if_i |
-                            (if_instr_addr[2] & ~instr_is_compressed & pmp_err_if_plus2_i);
+                            (if_instr_addr[1] & ~instr_is_compressed & pmp_err_if_plus2_i);
 
   // Combine bus errors and pmp errors
   assign if_instr_err = if_instr_bus_err | if_instr_pmp_err;
 
   // Capture the second half of the address for errors on the second part of an instruction
-  assign if_instr_err_plus2 = ((if_instr_addr[2] & ~instr_is_compressed & pmp_err_if_plus2_i) |
+  assign if_instr_err_plus2 = ((if_instr_addr[1] & ~instr_is_compressed & pmp_err_if_plus2_i) |
                                fetch_err_plus2) & ~pmp_err_if_i;
 
   // compressed instruction decoding, or more precisely compressed instruction
@@ -677,6 +681,18 @@ module ibex_if_stage import ibex_pkg::*; #(
     assign if_instr_bus_err = fetch_err;
     assign fetch_ready = id_in_ready_i & ~stall_dummy_instr;
   end
+
+  //////////
+  // FCOV //
+  //////////
+
+`ifndef SYNTHESIS
+  // fcov signals for V2S
+  `DV_FCOV_SIGNAL_GEN_IF(logic [1:0], dummy_instr_type,
+    gen_dummy_instr.dummy_instr_i.lfsr_data.instr_type, DummyInstructions)
+  `DV_FCOV_SIGNAL_GEN_IF(logic, insert_dummy_instr,
+    gen_dummy_instr.insert_dummy_instr, DummyInstructions)
+`endif
 
   ////////////////
   // Assertions //

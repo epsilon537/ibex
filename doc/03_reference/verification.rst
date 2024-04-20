@@ -1,3 +1,5 @@
+.. _verification:
+
 Verification
 ============
 
@@ -16,6 +18,14 @@ At a high level, this testbench uses the open source `RISCV-DV random instructio
 <https://github.com/google/riscv-dv>`_ to generate compiled instruction binaries, loads them into a
 simple memory model, stimulates the Ibex core to run this program in memory, and then compares the
 core trace log against a golden model ISS trace log to check for correctness of execution.
+
+Verification maturity is tracked via :ref:`verification_stages` that are `defined by the OpenTitan project <https://docs.opentitan.org/doc/project/development_stages/#hardware-verification-stages-v>`_.
+
+Ibex has achieved **V2S** for the ``opentitan`` configuration, broadly this means verification almost complete (over 90% code and functional coverage hit with over 90% regression pass rate with test plan and coverage plan fully implemented) but not yet closed.
+
+Nightly regression results, including a coverage summary and details of test failures, for the ``opentitan`` Ibex configuration are published at https://ibex.reports.lowrisc.org/opentitan/latest/report.html. Below is a summary of these results:
+
+.. image:: https://ibex.reports.lowrisc.org/opentitan/latest/summary.svg
 
 Testbench Architecture
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -101,8 +111,7 @@ In order to run the co-simulation flow, you'll need:
   + Some custom CSRs
   + Custom NMI behavior
 
-  Ibex verification should work with the Spike version that is tagged as ``ibex-cosim-v0.2``.
-  Other, later, versions called ``ibex-cosim-v*`` may also work but there's no guarantee of backwards compatibility.
+  Ibex verification should work with the Spike version that is tagged as ``ibex-cosim-v0.5``.
 
   Spike must be built with the ``--enable-commitlog`` and ``--enable-misaligned`` options.
   ``--enable-commitlog`` is needed to produce log output to track the instructions that were executed.

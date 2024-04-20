@@ -60,8 +60,9 @@ module ibex_load_store_unit #(
 
   // exception signals
   output logic         load_err_o,
+  output logic         load_resp_intg_err_o,
   output logic         store_err_o,
-  output logic         load_intg_err_o,
+  output logic         store_resp_intg_err_o,
 
   output logic         busy_o,
 
@@ -548,19 +549,58 @@ module ibex_load_store_unit #(
   // The data_intg_err signal is generated combinatorially from the incoming data_rdata_i. Were it
   // to be factored into load_err_o there would be a feedthrough path from data_rdata_i to
   // data_req_o which is undesirable.
-  assign load_intg_err_o = data_intg_err & data_rvalid_i;
+  assign load_resp_intg_err_o  = data_intg_err & data_rvalid_i & ~data_we_q;
+  assign store_resp_intg_err_o = data_intg_err & data_rvalid_i & data_we_q;
 
   assign busy_o = (ls_fsm_cs != IDLE);
 
   //////////
   // FCOV //
   //////////
+`ifndef DV_FCOV_DISABLE
+  // Set when awaiting the response for the second half of a misaligned access
+  logic fcov_mis_2_en_d, fcov_mis_2_en_q;
+
+  // fcov_mis_rvalid_1: Set when the response is received to the first half of a misaligned access,
+  // fcov_mis_rvalid_2: Set when response is received for the second half
+  logic fcov_mis_rvalid_1, fcov_mis_rvalid_2;
+
+  // Set when the first half of a misaligned access saw a bus errror
+  logic fcov_mis_bus_err_1_d, fcov_mis_bus_err_1_q;
+
+  assign fcov_mis_rvalid_1 = ls_fsm_cs inside {WAIT_RVALID_MIS, WAIT_RVALID_MIS_GNTS_DONE} &&
+                                data_rvalid_i;
+
+  assign fcov_mis_rvalid_2 = ls_fsm_cs inside {IDLE} && fcov_mis_2_en_q && data_rvalid_i;
+
+  assign fcov_mis_2_en_d = fcov_mis_rvalid_2 ? 1'b0            :  // clr
+                           fcov_mis_rvalid_1 ? 1'b1            :  // set
+                                               fcov_mis_2_en_q ;
+
+  assign fcov_mis_bus_err_1_d = fcov_mis_rvalid_2                   ? 1'b0                 : // clr
+                                fcov_mis_rvalid_1 && data_bus_err_i ? 1'b1                 : // set
+                                                                      fcov_mis_bus_err_1_q ;
+
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (!rst_ni) begin
+      fcov_mis_2_en_q <= 1'b0;
+      fcov_mis_bus_err_1_q <= 1'b0;
+    end else begin
+      fcov_mis_2_en_q <= fcov_mis_2_en_d;
+      fcov_mis_bus_err_1_q <= fcov_mis_bus_err_1_d;
+    end
+  end
+`endif
 
   `DV_FCOV_SIGNAL(logic, ls_error_exception, (load_err_o | store_err_o) & ~pmp_err_q)
   `DV_FCOV_SIGNAL(logic, ls_pmp_exception, (load_err_o | store_err_o) & pmp_err_q)
   `DV_FCOV_SIGNAL(logic, ls_first_req, lsu_req_i & (ls_fsm_cs == IDLE))
   `DV_FCOV_SIGNAL(logic, ls_second_req,
-    (ls_fsm_cs inside {WAIT_GNT, WAIT_RVALID_MIS}) & data_req_o & addr_incr_req_o)
+    (ls_fsm_cs inside {WAIT_RVALID_MIS}) & data_req_o & addr_incr_req_o)
+  `DV_FCOV_SIGNAL(logic, ls_mis_pmp_err_1,
+    (ls_fsm_cs inside {WAIT_RVALID_MIS, WAIT_GNT_MIS}) && pmp_err_q)
+  `DV_FCOV_SIGNAL(logic, ls_mis_pmp_err_2,
+    (ls_fsm_cs inside {WAIT_RVALID_MIS, WAIT_RVALID_MIS_GNTS_DONE}) && data_pmp_err_i)
 
   ////////////////
   // Assertions //

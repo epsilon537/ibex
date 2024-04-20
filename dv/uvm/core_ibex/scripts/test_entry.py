@@ -1,33 +1,41 @@
-import os
-import sys
-from typing import Dict, List
+# Copyright lowRISC contributors.
+# Licensed under the Apache License, Version 2.0, see LICENSE for details.
+# SPDX-License-Identifier: Apache-2.0
 
-_CORE_IBEX = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
-_IBEX_ROOT = os.path.normpath(os.path.join(_CORE_IBEX, 3 * '../'))
-_RISCV_DV_ROOT = os.path.join(_IBEX_ROOT, 'vendor/google_riscv-dv')
-_OLD_SYS_PATH = sys.path
+import argparse
+import re
+from typing import Dict, List, Tuple
+import pathlib3x as pathlib
 
-# Import riscv_trace_csv and lib from _DV_SCRIPTS before putting sys.path back
-# as it started.
-try:
-    sys.path = ([os.path.join(_CORE_IBEX, 'riscv_dv_extension'),
-                 os.path.join(_RISCV_DV_ROOT, 'scripts')] +
-                sys.path)
-    from lib import process_regression_list  # type: ignore
-finally:
-    sys.path = _OLD_SYS_PATH
+import scripts_lib
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 TestEntry = Dict[str, object]
 TestEntries = List[TestEntry]
+TestAndSeed = Tuple[str, int]
 
 
-def get_test_entry(testname: str) -> TestEntry:
-    matched_list = []  # type: TestEntries
-    testlist = os.path.join(_CORE_IBEX, 'riscv_dv_extension', 'testlist.yaml')
-    process_regression_list(testlist, 'all', 0, matched_list, _RISCV_DV_ROOT)
+def read_test_dot_seed(arg: str) -> TestAndSeed:
+    '''Read a value for --test-dot-seed'''
 
-    for entry in matched_list:
-        if entry['test'] == testname:
+    match = re.match(r'([^.]+)\.([0-9]+)$', arg)
+    if match is None:
+        raise argparse.ArgumentTypeError('Bad --test-dot-seed ({}): '
+                                         'should be of the form TEST.SEED.'
+                                         .format(arg))
+
+    return (match.group(1), int(match.group(2), 10))
+
+
+def get_test_entry(testname: str, testlist: pathlib.Path) -> TestEntry:
+
+    yaml_data = scripts_lib.read_yaml(testlist)
+
+    for entry in yaml_data:
+        if entry.get('test') == testname:
             return entry
+
     raise RuntimeError('No matching test entry for {!r}'.format(testname))

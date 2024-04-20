@@ -8,10 +8,18 @@ class dv_base_env_cfg #(type RAL_T = dv_base_reg_block) extends uvm_object;
   bit en_scb            = 1; // can be changed at run-time
   bit en_scb_tl_err_chk = 1;
   bit en_scb_mem_chk    = 1;
+  bit en_scb_ping_chk   = 1;
   bit en_cov            = 0; // Enable via plusarg, only if coverage collection is turned on.
+  bit en_dv_cdc         = 0; // Enable via plusarg.
 
+  local bit will_reset  = 0;
   bit under_reset       = 0;
   bit is_initialized;        // Indicates that the initialize() method has been called.
+
+  // JTAG DMI knob
+  // this has to be set test.build
+  // before cfg.initialize
+  bit use_jtag_dmi = 0;
 
   // The scope and runtime of a existing test can be reduced by setting this variable. This is
   // useful to keep the runtime down especially in time-sensitive runs such as CI, which is meant
@@ -100,8 +108,22 @@ class dv_base_env_cfg #(type RAL_T = dv_base_reg_block) extends uvm_object;
   protected virtual function void post_build_ral_settings(dv_base_reg_block ral);
   endfunction
 
+  // This can be used to stop transaction generators either upon reset or in preparation to
+  // issue a random reset.
+  virtual function bit stop_transaction_generators();
+    return this.will_reset || this.under_reset;
+  endfunction
+
+  // This can be used to announce the intention to generate a random reset soon, to allow
+  // transaction generators to stop, and fire a reset with no outstanding transactions.
+  virtual function void set_intention_to_reset();
+    `uvm_info(`gfn, "Setting intention to reset", UVM_MEDIUM)
+    this.will_reset = 1'b1;
+  endfunction
+
   virtual function void reset_asserted();
     this.under_reset = 1;
+    this.will_reset = 0;
     csr_utils_pkg::reset_asserted();
   endfunction
 
