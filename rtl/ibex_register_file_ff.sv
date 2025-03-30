@@ -11,43 +11,45 @@
  * targeting FPGA synthesis or Verilator simulation.
  */
 module ibex_register_file_ff #(
-  parameter bit                   RV32E             = 0,
-  parameter int unsigned          DataWidth         = 32,
-  parameter bit                   DummyInstructions = 0,
-  parameter bit                   WrenCheck         = 0,
-  parameter bit                   RdataMuxCheck     = 0,
-  parameter logic [DataWidth-1:0] WordZeroVal       = '0
+    parameter bit                          RV32E             = 0,
+    parameter int unsigned                 DataWidth         = 32,
+    parameter bit                          DummyInstructions = 0,
+    parameter bit                          WrenCheck         = 0,
+    parameter bit                          RdataMuxCheck     = 0,
+    parameter logic        [DataWidth-1:0] WordZeroVal       = '0
 ) (
-  // Clock and Reset
-  input  logic                 clk_i,
-  input  logic                 rst_ni,
+    // Clock and Reset
+    input logic clk_i,
+    input logic rst_ni,
 
-  input  logic                 test_en_i,
-  input  logic                 dummy_instr_id_i,
-  input  logic                 dummy_instr_wb_i,
+    input logic test_en_i,
+    input logic dummy_instr_id_i,
+    input logic dummy_instr_wb_i,
 
-  //Read port R1
-  input  logic [4:0]           raddr_a_i,
-  output logic [DataWidth-1:0] rdata_a_o,
+    //Read port R1
+    input  logic [          4:0] raddr_a_i,
+    output logic [DataWidth-1:0] rdata_a_o,
 
-  //Read port R2
-  input  logic [4:0]           raddr_b_i,
-  output logic [DataWidth-1:0] rdata_b_o,
+    //Read port R2
+    input  logic [          4:0] raddr_b_i,
+    output logic [DataWidth-1:0] rdata_b_o,
 
 
-  // Write port W1
-  input  logic [4:0]           waddr_a_i,
-  input  logic [DataWidth-1:0] wdata_a_i,
-  input  logic                 we_a_i,
+    // Write port W1
+    input logic [          4:0] waddr_a_i,
+    input logic [DataWidth-1:0] wdata_a_i,
+    input logic                 we_a_i,
 
-  // This indicates whether spurious WE or non-one-hot encoded raddr are detected.
-  output logic                 err_o
+    input  logic irq_mode_i,
+    // This indicates whether spurious WE or non-one-hot encoded raddr are detected.
+    output logic err_o
 );
 
   localparam int unsigned ADDR_WIDTH = RV32E ? 4 : 5;
-  localparam int unsigned NUM_WORDS  = 2**ADDR_WIDTH;
+  localparam int unsigned NUM_WORDS = 2 ** ADDR_WIDTH;
 
   logic [DataWidth-1:0] rf_reg   [NUM_WORDS];
+  logic [DataWidth-1:0] rf_reg_irq   [NUM_WORDS];
   logic [NUM_WORDS-1:0] we_a_dec;
 
   logic oh_raddr_a_err, oh_raddr_b_err, oh_we_err;
@@ -65,51 +67,59 @@ module ibex_register_file_ff #(
     // is not optimized into the address decoding logic.
     logic [NUM_WORDS-1:0] we_a_dec_buf;
     prim_buf #(
-      .Width(NUM_WORDS)
+        .Width(NUM_WORDS)
     ) u_prim_buf (
-      .in_i(we_a_dec),
-      .out_o(we_a_dec_buf)
+        .in_i (we_a_dec),
+        .out_o(we_a_dec_buf)
     );
 
     prim_onehot_check #(
-      .AddrWidth(ADDR_WIDTH),
-      .AddrCheck(1),
-      .EnableCheck(1)
+        .AddrWidth  (ADDR_WIDTH),
+        .AddrCheck  (1),
+        .EnableCheck(1)
     ) u_prim_onehot_check (
-      .clk_i,
-      .rst_ni,
-      .oh_i(we_a_dec_buf),
-      .addr_i(waddr_a_i),
-      .en_i(we_a_i),
-      .err_o(oh_we_err)
+        .clk_i,
+        .rst_ni,
+        .oh_i  (we_a_dec_buf),
+        .addr_i(waddr_a_i),
+        .en_i  (we_a_i),
+        .err_o (oh_we_err)
     );
   end else begin : gen_no_wren_check
     logic unused_strobe;
-    assign unused_strobe = we_a_dec[0]; // this is never read from in this case
+    assign unused_strobe = we_a_dec[0];  // this is never read from in this case
     assign oh_we_err = 1'b0;
   end
 
   // No flops for R0 as it's hard-wired to 0
   for (genvar i = 1; i < NUM_WORDS; i++) begin : g_rf_flops
-    logic [DataWidth-1:0] rf_reg_q;
+    logic [DataWidth-1:0] rf_reg_q, rf_reg_irq_q;
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
       if (!rst_ni) begin
         rf_reg_q <= WordZeroVal;
+        rf_reg_irq_q <= WordZeroVal;
       end else if (we_a_dec[i]) begin
-        rf_reg_q <= wdata_a_i;
+        //Non-IRQ register writes go to both banks
+        if (irq_mode_i) begin
+          rf_reg_irq_q <= wdata_a_i;
+        end else begin
+          rf_reg_q <= wdata_a_i;
+          rf_reg_irq_q <= wdata_a_i;
+        end
       end
     end
 
     assign rf_reg[i] = rf_reg_q;
+    assign rf_reg_irq[i] = rf_reg_irq_q;
   end
 
   // With dummy instructions enabled, R0 behaves as a real register but will always return 0 for
   // real instructions.
   if (DummyInstructions) begin : g_dummy_r0
     // SEC_CM: CTRL_FLOW.UNPREDICTABLE
-    logic                 we_r0_dummy;
-    logic [DataWidth-1:0] rf_r0_q;
+    logic we_r0_dummy;
+    logic [DataWidth-1:0] rf_r0_q, rf_r0_irq_q;
 
     // Write enable for dummy R0 register (waddr_a_i will always be 0 for dummy instructions)
     assign we_r0_dummy = we_a_i & dummy_instr_wb_i;
@@ -117,13 +127,21 @@ module ibex_register_file_ff #(
     always_ff @(posedge clk_i or negedge rst_ni) begin
       if (!rst_ni) begin
         rf_r0_q <= WordZeroVal;
+        rf_r0_irq_q <= WordZeroVal;
       end else if (we_r0_dummy) begin
-        rf_r0_q <= wdata_a_i;
+        if (irq_mode_i) begin
+          rf_r0_irq_q <= wdata_a_i;
+        end else begin
+          //Non-IRQ register writes go to both banks
+          rf_r0_q <= wdata_a_i;
+          rf_r0_irq_q <= wdata_a_i;
+        end
       end
     end
 
     // Output the dummy data for dummy instructions, otherwise R0 reads as zero
     assign rf_reg[0] = dummy_instr_id_i ? rf_r0_q : WordZeroVal;
+    assign rf_reg_irq[0] = dummy_instr_id_i ? rf_r0_irq_q : WordZeroVal;
 
   end else begin : g_normal_r0
     logic unused_dummy_instr;
@@ -131,6 +149,7 @@ module ibex_register_file_ff #(
 
     // R0 is nil
     assign rf_reg[0] = WordZeroVal;
+    assign rf_reg_irq[0] = WordZeroVal;
   end
 
   if (RdataMuxCheck) begin : gen_rdata_mux_check
@@ -138,96 +157,96 @@ module ibex_register_file_ff #(
     logic [NUM_WORDS-1:0] raddr_onehot_a, raddr_onehot_b;
     logic [NUM_WORDS-1:0] raddr_onehot_a_buf, raddr_onehot_b_buf;
     prim_onehot_enc #(
-      .OneHotWidth(NUM_WORDS)
+        .OneHotWidth(NUM_WORDS)
     ) u_prim_onehot_enc_raddr_a (
-      .in_i  (raddr_a_i),
-      .en_i  (1'b1),
-      .out_o (raddr_onehot_a)
+        .in_i (raddr_a_i),
+        .en_i (1'b1),
+        .out_o(raddr_onehot_a)
     );
 
     prim_onehot_enc #(
-      .OneHotWidth(NUM_WORDS)
+        .OneHotWidth(NUM_WORDS)
     ) u_prim_onehot_enc_raddr_b (
-      .in_i  (raddr_b_i),
-      .en_i  (1'b1),
-      .out_o (raddr_onehot_b)
+        .in_i (raddr_b_i),
+        .en_i (1'b1),
+        .out_o(raddr_onehot_b)
     );
 
     // Buffer the one-hot encoded signals so that the checkers
     // are not optimized.
     prim_buf #(
-      .Width(NUM_WORDS)
+        .Width(NUM_WORDS)
     ) u_prim_buf_raddr_a (
-      .in_i (raddr_onehot_a),
-      .out_o(raddr_onehot_a_buf)
+        .in_i (raddr_onehot_a),
+        .out_o(raddr_onehot_a_buf)
     );
 
     prim_buf #(
-      .Width(NUM_WORDS)
+        .Width(NUM_WORDS)
     ) u_prim_buf_raddr_b (
-      .in_i (raddr_onehot_b),
-      .out_o(raddr_onehot_b_buf)
+        .in_i (raddr_onehot_b),
+        .out_o(raddr_onehot_b_buf)
     );
 
     // SEC_CM: DATA_REG_SW.GLITCH_DETECT
     // Check the one-hot encoded signals for glitches.
     prim_onehot_check #(
-      .AddrWidth(ADDR_WIDTH),
-      .OneHotWidth(NUM_WORDS),
-      .AddrCheck(1),
-      // When AddrCheck=1 also EnableCheck needs to be 1.
-      .EnableCheck(1)
+        .AddrWidth  (ADDR_WIDTH),
+        .OneHotWidth(NUM_WORDS),
+        .AddrCheck  (1),
+        // When AddrCheck=1 also EnableCheck needs to be 1.
+        .EnableCheck(1)
     ) u_prim_onehot_check_raddr_a (
-      .clk_i,
-      .rst_ni,
-      .oh_i   (raddr_onehot_a_buf),
-      .addr_i (raddr_a_i),
-      // Set enable=1 as address is always valid.
-      .en_i   (1'b1),
-      .err_o  (oh_raddr_a_err)
+        .clk_i,
+        .rst_ni,
+        .oh_i  (raddr_onehot_a_buf),
+        .addr_i(raddr_a_i),
+        // Set enable=1 as address is always valid.
+        .en_i  (1'b1),
+        .err_o (oh_raddr_a_err)
     );
 
     prim_onehot_check #(
-      .AddrWidth(ADDR_WIDTH),
-      .OneHotWidth(NUM_WORDS),
-      .AddrCheck(1),
-      // When AddrCheck=1 also EnableCheck needs to be 1.
-      .EnableCheck(1)
+        .AddrWidth  (ADDR_WIDTH),
+        .OneHotWidth(NUM_WORDS),
+        .AddrCheck  (1),
+        // When AddrCheck=1 also EnableCheck needs to be 1.
+        .EnableCheck(1)
     ) u_prim_onehot_check_raddr_b (
-      .clk_i,
-      .rst_ni,
-      .oh_i   (raddr_onehot_b_buf),
-      .addr_i (raddr_b_i),
-      // Set enable=1 as address is always valid.
-      .en_i   (1'b1),
-      .err_o  (oh_raddr_b_err)
+        .clk_i,
+        .rst_ni,
+        .oh_i  (raddr_onehot_b_buf),
+        .addr_i(raddr_b_i),
+        // Set enable=1 as address is always valid.
+        .en_i  (1'b1),
+        .err_o (oh_raddr_b_err)
     );
 
     // MUX register to rdata_a/b_o according to raddr_a/b_onehot.
-    prim_onehot_mux  #(
-      .Width(DataWidth),
-      .Inputs(NUM_WORDS)
+    prim_onehot_mux #(
+        .Width (DataWidth),
+        .Inputs(NUM_WORDS)
     ) u_rdata_a_mux (
-      .clk_i,
-      .rst_ni,
-      .in_i  (rf_reg),
-      .sel_i (raddr_onehot_a),
-      .out_o (rdata_a_o)
+        .clk_i,
+        .rst_ni,
+        .in_i (irq_mode_i ? rf_reg_irq : rf_reg),
+        .sel_i(raddr_onehot_a),
+        .out_o(rdata_a_o)
     );
 
-    prim_onehot_mux  #(
-      .Width(DataWidth),
-      .Inputs(NUM_WORDS)
+    prim_onehot_mux #(
+        .Width (DataWidth),
+        .Inputs(NUM_WORDS)
     ) u_rdata_b_mux (
-      .clk_i,
-      .rst_ni,
-      .in_i  (rf_reg),
-      .sel_i (raddr_onehot_b),
-      .out_o (rdata_b_o)
+        .clk_i,
+        .rst_ni,
+        .in_i (irq_mode_i ? rf_reg_irq : rf_reg),
+        .sel_i(raddr_onehot_b),
+        .out_o(rdata_b_o)
     );
   end else begin : gen_no_rdata_mux_check
-    assign rdata_a_o = rf_reg[raddr_a_i];
-    assign rdata_b_o = rf_reg[raddr_b_i];
+    assign rdata_a_o = irq_mode_i ? rf_reg_irq[raddr_a_i] : rf_reg[raddr_a_i];
+    assign rdata_b_o = irq_mode_i ? rf_reg_irq[raddr_b_i] : rf_reg[raddr_b_i];
     assign oh_raddr_a_err = 1'b0;
     assign oh_raddr_b_err = 1'b0;
   end

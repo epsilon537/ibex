@@ -27,6 +27,7 @@ module ibex_top
     parameter rv32m_e RV32M = RV32MFast,
     parameter rv32b_e RV32B = RV32BNone,
     parameter regfile_e RegFile = RegFileFF,
+    parameter bit InterruptShadowRegisters = 1'b0,
     parameter bit BranchTargetALU = 1'b0,
     parameter bit WritebackStage = 1'b0,
     parameter prefetch_type_e PrefetchType = PrefetchType_Single,
@@ -170,6 +171,7 @@ module ibex_top
   ibex_mubi_t core_busy_d, core_busy_q;
   logic                        clock_en;
   logic                        irq_pending;
+  logic                        irq_mode;
   // Core <-> Register file signals
   logic                        dummy_instr_id;
   logic                        dummy_instr_wb;
@@ -377,6 +379,7 @@ module ibex_top
       .irq_fast_i,
       .irq_nm_i,
       .irq_pending_o(irq_pending),
+      .irq_mode_o(irq_mode),
 
       .debug_req_i,
       .crash_dump_o,
@@ -449,14 +452,15 @@ module ibex_top
         .dummy_instr_id_i(dummy_instr_id),
         .dummy_instr_wb_i(dummy_instr_wb),
 
-        .raddr_a_i(rf_raddr_a),
-        .rdata_a_o(rf_rdata_a_ecc),
-        .raddr_b_i(rf_raddr_b),
-        .rdata_b_o(rf_rdata_b_ecc),
-        .waddr_a_i(rf_waddr_wb),
-        .wdata_a_i(rf_wdata_wb_ecc),
-        .we_a_i   (rf_we_wb),
-        .err_o    (rf_alert_major_internal)
+        .raddr_a_i (rf_raddr_a),
+        .rdata_a_o (rf_rdata_a_ecc),
+        .raddr_b_i (rf_raddr_b),
+        .rdata_b_o (rf_rdata_b_ecc),
+        .waddr_a_i (rf_waddr_wb),
+        .wdata_a_i (rf_wdata_wb_ecc),
+        .we_a_i    (rf_we_wb),
+        .irq_mode_i(InterruptShadowRegisters ? irq_mode : 1'b0),
+        .err_o     (rf_alert_major_internal)
     );
   end else if (RegFile == RegFileFPGA) begin : gen_regfile_fpga
     ibex_register_file_fpga #(
@@ -475,14 +479,15 @@ module ibex_top
         .dummy_instr_id_i(dummy_instr_id),
         .dummy_instr_wb_i(dummy_instr_wb),
 
-        .raddr_a_i(rf_raddr_a),
-        .rdata_a_o(rf_rdata_a_ecc),
-        .raddr_b_i(rf_raddr_b),
-        .rdata_b_o(rf_rdata_b_ecc),
-        .waddr_a_i(rf_waddr_wb),
-        .wdata_a_i(rf_wdata_wb_ecc),
-        .we_a_i   (rf_we_wb),
-        .err_o    (rf_alert_major_internal)
+        .raddr_a_i (rf_raddr_a),
+        .rdata_a_o (rf_rdata_a_ecc),
+        .raddr_b_i (rf_raddr_b),
+        .rdata_b_o (rf_rdata_b_ecc),
+        .waddr_a_i (rf_waddr_wb),
+        .wdata_a_i (rf_wdata_wb_ecc),
+        .we_a_i    (rf_we_wb),
+        .irq_mode_i(InterruptShadowRegisters ? irq_mode : 1'b0),
+        .err_o     (rf_alert_major_internal)
     );
   end else if (RegFile == RegFileLatch) begin : gen_regfile_latch
     ibex_register_file_latch #(
@@ -867,6 +872,7 @@ module ibex_top
     logic        [                14:0] irq_fast_local;
     logic                               irq_nm_local;
     logic                               irq_pending_local;
+    logic                               irq_mode_local;
 
     logic                               debug_req_local;
     crash_dump_t                        crash_dump_local;
@@ -1090,6 +1096,7 @@ module ibex_top
         .irq_fast_i    (irq_fast_local),
         .irq_nm_i      (irq_nm_local),
         .irq_pending_i (irq_pending_local),
+        .irq_mode_o    (irq_mode_local),
 
         .debug_req_i        (debug_req_local),
         .crash_dump_i       (crash_dump_local),

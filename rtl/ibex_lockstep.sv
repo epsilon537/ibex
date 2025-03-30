@@ -93,12 +93,13 @@ module ibex_lockstep
     input logic                   ic_scr_key_valid_i,
     input logic                   ic_scr_key_req_i,
 
-    input logic        irq_software_i,
-    input logic        irq_timer_i,
-    input logic        irq_external_i,
-    input logic [14:0] irq_fast_i,
-    input logic        irq_nm_i,
-    input logic        irq_pending_i,
+    input  logic        irq_software_i,
+    input  logic        irq_timer_i,
+    input  logic        irq_external_i,
+    input  logic [14:0] irq_fast_i,
+    input  logic        irq_nm_i,
+    input  logic        irq_pending_i,
+    output logic        irq_mode_o,
 
     input logic        debug_req_i,
     input crash_dump_t crash_dump_i,
@@ -438,6 +439,7 @@ module ibex_lockstep
       .irq_fast_i    (shadow_inputs_q[0].irq_fast),
       .irq_nm_i      (shadow_inputs_q[0].irq_nm),
       .irq_pending_o (shadow_outputs_d.irq_pending),
+      .irq_mode_o    (irq_mode_o),
 
       .debug_req_i        (shadow_inputs_q[0].debug_req),
       .crash_dump_o       (shadow_outputs_d.crash_dump),

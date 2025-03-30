@@ -78,6 +78,7 @@ module ibex_controller #(
                                                 // mie CSR
     input  logic            irq_nm_ext_i,       // non-maskeable interrupt
     output logic            nmi_mode_o,         // core executing NMI handler
+    output logic            irq_mode_o,         // core executing IRQ handler
 
     // debug signals
     input  logic                 debug_req_i,
@@ -108,14 +109,16 @@ module ibex_controller #(
     // performance monitors
     output logic perf_jump_o,    // we are executing a jump
                                  // instruction (j, jr, jal, jalr)
-    output logic perf_tbranch_o  // we are executing a taken branch
+    output logic perf_tbranch_o // we are executing a taken branch
                                  // instruction
 );
   import ibex_pkg::*;
 
   ctrl_fsm_e ctrl_fsm_cs, ctrl_fsm_ns;
 
+  logic handle_irq;
   logic nmi_mode_q, nmi_mode_d;
+  logic irq_mode_q, irq_mode_d;
   logic debug_mode_q, debug_mode_d;
   dbg_cause_e debug_cause_d, debug_cause_q;
   logic load_err_q, load_err_d;
@@ -147,7 +150,6 @@ module ibex_controller #(
   logic                            enter_debug_mode;
   logic                            ebreak_into_debug;
   logic                            irq_enabled;
-  logic                            handle_irq;
   logic                            id_wb_pending;
 
   logic                            irq_nm;
@@ -420,8 +422,9 @@ module ibex_controller #(
   // - while in debug mode,
   // - while in NMI mode (nested NMIs are not supported, NMI has highest priority and
   //   cannot be interrupted by regular interrupts),
+  // - while in IRQ mode. Nested IRQs are not supported.
   // - while single stepping.
-  assign handle_irq = ~debug_mode_q & ~debug_single_step_i & ~nmi_mode_q &
+  assign handle_irq = ~debug_mode_q & ~debug_single_step_i & ~nmi_mode_q & ~irq_mode_q &
       (irq_nm | (irq_pending_i & irq_enabled));
 
   // generate ID of fast interrupts, highest priority to lowest ID
@@ -496,6 +499,7 @@ module ibex_controller #(
     debug_mode_d           = debug_mode_q;
     debug_mode_entering_o  = 1'b0;
     nmi_mode_d             = nmi_mode_q;
+    irq_mode_d             = irq_mode_q;
 
     perf_tbranch_o         = 1'b0;
     perf_jump_o            = 1'b0;
@@ -674,12 +678,16 @@ module ibex_controller #(
             // - second bit adds 16 to fast interrupt ID
             // for example ExcCauseIrqFast0 = {1'b1, 5'd16}
             exc_cause_o = '{irq_ext: 1'b1, irq_int: 1'b0, lower_cause: {1'b1, mfip_id}};
+            irq_mode_d  = 1'b1; // enter IRQ mode.
           end else if (irqs_i.irq_external) begin
             exc_cause_o = ExcCauseIrqExternalM;
+            irq_mode_d  = 1'b1; // enter IRQ mode.
           end else if (irqs_i.irq_software) begin
             exc_cause_o = ExcCauseIrqSoftwareM;
+            irq_mode_d  = 1'b1; // enter IRQ mode.
           end else begin  // irqs_i.irq_timer
             exc_cause_o = ExcCauseIrqTimerM;
+            irq_mode_d  = 1'b1; // enter IRQ mode.
           end
         end
 
@@ -814,6 +822,9 @@ module ibex_controller #(
             if (nmi_mode_q) begin
               nmi_mode_d = 1'b0;  // exit NMI mode
             end
+            if (irq_mode_q) begin
+              irq_mode_d = 1'b0;  // exit IRQ mode
+            end
           end else if (dret_insn) begin
             pc_mux_o              = PC_DRET;
             pc_set_o              = 1'b1;
@@ -863,6 +874,9 @@ module ibex_controller #(
   // signal to CSR when in an NMI handler (for nested exception handling)
   assign nmi_mode_o = nmi_mode_q;
 
+  // signal to higher levels when in IRQ mode
+  assign irq_mode_o = irq_mode_q;
+
   ///////////////////
   // Stall control //
   ///////////////////
@@ -887,6 +901,7 @@ module ibex_controller #(
     if (!rst_ni) begin
       ctrl_fsm_cs             <= RESET;
       nmi_mode_q              <= 1'b0;
+      irq_mode_q              <= 1'b0;
       do_single_step_q        <= 1'b0;
       debug_mode_q            <= 1'b0;
       enter_debug_mode_prio_q <= 1'b0;
@@ -897,6 +912,7 @@ module ibex_controller #(
     end else begin
       ctrl_fsm_cs             <= ctrl_fsm_ns;
       nmi_mode_q              <= nmi_mode_d;
+      irq_mode_q              <= irq_mode_d;
       do_single_step_q        <= do_single_step_d;
       debug_mode_q            <= debug_mode_d;
       enter_debug_mode_prio_q <= enter_debug_mode_prio_d;
