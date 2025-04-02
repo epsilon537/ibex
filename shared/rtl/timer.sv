@@ -7,50 +7,54 @@
 `include "prim_assert.sv"
 
 module timer #(
-  // Bus data width (must be 32)
-  parameter int unsigned DataWidth    = 32,
-  // Bus address width
-  parameter int unsigned AddressWidth = 32
+    // Bus data width (must be 32)
+    parameter int unsigned DataWidth    = 32,
+    // Bus address width
+    parameter int unsigned AddressWidth = 32
 ) (
-  input  logic                    clk_i,
-  input  logic                    rst_ni,
-  // Bus interface
-  input  logic                    timer_req_i,
+    input logic clk_i,
+    input logic rst_ni,
+    // Bus interface
+    input logic timer_req_i,
 
-  input  logic [AddressWidth-1:0] timer_addr_i,
-  input  logic                    timer_we_i,
-  input  logic [ DataWidth/8-1:0] timer_be_i,
-  input  logic [   DataWidth-1:0] timer_wdata_i,
-  output logic                    timer_rvalid_o,
-  output logic [   DataWidth-1:0] timer_rdata_o,
-  output logic                    timer_err_o,
-  output logic                    timer_intr_o
+    input  logic [AddressWidth-1:0] timer_addr_i,
+    input  logic                    timer_we_i,
+    input  logic [ DataWidth/8-1:0] timer_be_i,
+    input  logic [   DataWidth-1:0] timer_wdata_i,
+    output logic                    timer_rvalid_o,
+    output logic [   DataWidth-1:0] timer_rdata_o,
+    output logic                    timer_err_o,
+    output logic                    timer_intr_o
 );
 
   // The timers are always 64 bits
   localparam int unsigned TW = 64;
   // Upper bits of address are decoded into timer_req_i
-  localparam int unsigned ADDR_OFFSET = 10; // 1kB
+  localparam int unsigned ADDR_OFFSET = 10;  // 1kB
   // Register map
   localparam bit [9:0] MTIME_LOW = 0;
   localparam bit [9:0] MTIME_HIGH = 4;
   localparam bit [9:0] MTIMECMP_LOW = 8;
   localparam bit [9:0] MTIMECMP_HIGH = 12;
+  localparam bit [9:0] MTIMEBLK_LOW = 16;  /*There is no HIGH*/
 
-  logic                 timer_we;
-  logic                 mtime_we, mtimeh_we;
-  logic                 mtimecmp_we, mtimecmph_we;
+  logic timer_we;
+  logic mtime_we, mtimeh_we;
+  logic mtimecmp_we, mtimecmph_we;
+  logic mtimeblk_we;
   logic [DataWidth-1:0] mtime_wdata, mtimeh_wdata;
   logic [DataWidth-1:0] mtimecmp_wdata, mtimecmph_wdata;
-  logic [TW-1:0]        mtime_q, mtime_d, mtime_inc;
-  logic [TW-1:0]        mtimecmp_q, mtimecmp_d;
-  logic                 interrupt_q, interrupt_d;
-  logic                 error_q, error_d;
+  logic [7:0] mtimeblk_wdata;
+  logic [TW-1:0] mtime_q, mtime_d, mtime_inc;
+  logic [TW-1:0] mtimecmp_q, mtimecmp_d;
+  logic [7:0] mtimeblk_q, mtimeblk_d;
+  logic interrupt_q, interrupt_d;
+  logic error_q, error_d;
   logic [DataWidth-1:0] rdata_q, rdata_d;
-  logic                 rvalid_q;
+  logic rvalid_q;
 
   // Global write enable for all registers
-  assign timer_we = timer_req_i & timer_we_i;
+  assign timer_we  = timer_req_i & timer_we_i;
 
   // mtime increments every cycle
   assign mtime_inc = mtime_q + 64'd1;
@@ -58,27 +62,34 @@ module timer #(
   // Generate write data based on byte strobes
   for (genvar b = 0; b < DataWidth / 8; b++) begin : gen_byte_wdata
 
-    assign mtime_wdata[(b*8)+:8]     = timer_be_i[b] ? timer_wdata_i[b*8+:8] :
-                                                       mtime_q[(b*8)+:8];
+    assign mtime_wdata[(b*8)+:8] = timer_be_i[b] ? timer_wdata_i[b*8+:8] : mtime_q[(b*8)+:8];
     assign mtimeh_wdata[(b*8)+:8]    = timer_be_i[b] ? timer_wdata_i[b*8+:8] :
                                                        mtime_q[DataWidth+(b*8)+:8];
-    assign mtimecmp_wdata[(b*8)+:8]  = timer_be_i[b] ? timer_wdata_i[b*8+:8] :
-                                                       mtimecmp_q[(b*8)+:8];
+    assign mtimecmp_wdata[(b*8)+:8] = timer_be_i[b] ? timer_wdata_i[b*8+:8] : mtimecmp_q[(b*8)+:8];
     assign mtimecmph_wdata[(b*8)+:8] = timer_be_i[b] ? timer_wdata_i[b*8+:8] :
                                                        mtimecmp_q[DataWidth+(b*8)+:8];
   end
 
+  assign mtimeblk_wdata = timer_be_i[0] ? timer_wdata_i[7:0] : mtimeblk_q;
+
   // Generate write enables
-  assign mtime_we     = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIME_LOW);
-  assign mtimeh_we    = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIME_HIGH);
-  assign mtimecmp_we  = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIMECMP_LOW);
+  assign mtime_we = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIME_LOW);
+  assign mtimeh_we = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIME_HIGH);
+  assign mtimecmp_we = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIMECMP_LOW);
   assign mtimecmph_we = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIMECMP_HIGH);
+  assign mtimeblk_we = timer_we & (timer_addr_i[ADDR_OFFSET-1:0] == MTIMEBLK_LOW);
 
   // Generate next data
-  assign mtime_d    = {(mtimeh_we    ? mtimeh_wdata    : mtime_inc[63:32]),
-                       (mtime_we     ? mtime_wdata     : mtime_inc[31:0])};
-  assign mtimecmp_d = {(mtimecmph_we ? mtimecmph_wdata : mtimecmp_q[63:32]),
-                       (mtimecmp_we  ? mtimecmp_wdata  : mtimecmp_q[31:0])};
+  assign mtime_d = {
+    (mtimeh_we ? mtimeh_wdata : mtime_inc[63:32]), (mtime_we ? mtime_wdata : mtime_inc[31:0])
+  };
+  assign mtimecmp_d = {
+    (mtimecmph_we ? mtimecmph_wdata : mtimecmp_q[63:32]),
+    (mtimecmp_we ? mtimecmp_wdata : mtimecmp_q[31:0])
+  };
+  //subtract 1 from the specified value. The transaction completes 1 cycle
+  //after the block value matches the mtimer value.
+  assign mtimeblk_d = {mtimeblk_we ? mtimeblk_wdata - 8'd1 : mtimeblk_q};
 
   // Generate registers
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -97,8 +108,16 @@ module timer #(
     end
   end
 
+  always_ff @(posedge clk_i or negedge rst_ni) begin
+    if (~rst_ni) begin
+      mtimeblk_q <= 'b0;
+    end else if (mtimeblk_we) begin
+      mtimeblk_q <= mtimeblk_d;
+    end
+  end
+
   // interrupt remains set until mtimecmp is written
-  assign interrupt_d  = ((mtime_q >= mtimecmp_q) | interrupt_q) & ~(mtimecmp_we | mtimecmph_we);
+  assign interrupt_d = ((mtime_q >= mtimecmp_q) | interrupt_q) & ~(mtimecmp_we | mtimecmph_we);
 
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (~rst_ni) begin
@@ -119,6 +138,7 @@ module timer #(
       MTIME_HIGH:    rdata_d = mtime_q[63:32];
       MTIMECMP_LOW:  rdata_d = mtimecmp_q[31:0];
       MTIMECMP_HIGH: rdata_d = mtimecmp_q[63:32];
+      MTIMEBLK_LOW:  rdata_d = {24'b0, mtimeblk_q};
       default: begin
         rdata_d = 'b0;
         // Error if no address matched
@@ -137,12 +157,23 @@ module timer #(
 
   assign timer_rdata_o = rdata_q;
 
-  // Read data is always valid one cycle after a request
+  // BoxLambda: rvalid is used to generate the wishbone ack pulse, also in
+  // case of register write operations.
+  // - Read data is always valid one cycle after a request
+  // - Write to registers other than MTIMEBLK_LOW is acknowledged one cycle
+  // after a request.
+  // - A write to MTIMEBLK_LOW is acknowledged when the lower 8 bits of mtimer
+  // match the mtimeblk value. This can be used to remove interrupt jitter
+  // on timer interrupts.
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       rvalid_q <= 1'b0;
     end else begin
-      rvalid_q <= timer_req_i;
+      if (mtimeblk_we) begin
+        rvalid_q <= (mtimeblk_q == mtime_q[7:0]) ? 1'b1 : 1'b0;
+      end else begin
+        rvalid_q <= timer_req_i;
+      end
     end
   end
 
