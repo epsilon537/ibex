@@ -36,7 +36,7 @@ module timer #(
   localparam bit [9:0] MTIME_HIGH = 4;
   localparam bit [9:0] MTIMECMP_LOW = 8;
   localparam bit [9:0] MTIMECMP_HIGH = 12;
-  localparam bit [9:0] MTIMEBLK_LOW = 16;  /*There is no HIGH*/
+  localparam bit [9:0] MTIMEBLK_LOW = 16;  /*There is no HIGH part for this register.*/
 
   logic timer_we;
   logic mtime_we, mtimeh_we;
@@ -87,8 +87,8 @@ module timer #(
     (mtimecmph_we ? mtimecmph_wdata : mtimecmp_q[63:32]),
     (mtimecmp_we ? mtimecmp_wdata : mtimecmp_q[31:0])
   };
-  //subtract 1 from the specified value. The transaction completes 1 cycle
-  //after the block value matches the mtimer value.
+  //subtract 1 from the specified value. The transaction completes (blocks
+  //until) 1 cycle after the block value matches the mtimer value.
   assign mtimeblk_d = {mtimeblk_we ? mtimeblk_wdata - 8'd1 : mtimeblk_q};
 
   // Generate registers
