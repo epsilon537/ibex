@@ -47,10 +47,10 @@ module ibex_single_prefetch_buffer (
   logic transaction_ongoing_reg; //Indicates a transaction is ongoing, that is instr_req_o has been raised, and the responding instr_rvalid/err_i has not been received yet.
   logic instr_req_reg;  //Registering the instr_req_o signal, in case the bus is stalled.
   logic [31:0] instr_adr_reg; //Register keeping track of the address of the instruction being fetched.
-  logic rvalid_pending_reg; //rvalid pending register, used when IF-stage is not ready to receive the return data.
-  logic err_pending_reg;  //err pending register, used when IF-stage is not ready to receive the error.
+  logic rvalid_pending_reg; //rvalid pending register, used when IF-stage is not ready yet to receive the return data.
+  logic err_pending_reg;  //err pending register, used when IF-stage is not ready yet to receive the error.
   logic [31:0] rdata_reg; //Registering the return data, in case the instruction fetch (IF) stage, is not ready.
-  logic [31:0] addr_o_reg; //Register the insutrction address, going along with the return data, in case the instruction fetch (IF) stage, is not ready.
+  logic [31:0] addr_o_reg; //Register the instruction address, going along with the return data, in case the instruction fetch (IF) stage, is not ready.
 
   initial begin
     mid_transaction_branch_req = 1'b0;
@@ -90,10 +90,10 @@ module ibex_single_prefetch_buffer (
       instr_req_reg <= 1'b0;
       instr_adr_reg <= 0;
       transaction_ongoing_reg <= 1'b0;
-      rvalid_pending_reg <= 1'b0;
-      err_pending_reg <= 1'b0;
       rdata_reg <= 0;
       addr_o_reg <= 0;
+      rvalid_pending_reg <= 1'b0;
+      err_pending_reg <= 1'b0;
     end else begin
       //If we're currently not handling a transaction
       if (!transaction_ongoing_reg) begin
@@ -114,19 +114,26 @@ module ibex_single_prefetch_buffer (
         if (instr_gnt_i) begin  //A grant is received.
           instr_req_reg <= 1'b0;  //Clear instr_rq_o on the next cycle.
         end
-        //Return data or error received.
-        if (instr_rvalid_i || instr_err_i) begin
-          addr_o_reg <= instr_adr_reg;
-          rdata_reg <= instr_rdata_i;
-          transaction_ongoing_reg <= ~ready_i; //If at this point the IF stage is not ready, prolong the transaction until the IF stage is ready.
-          rvalid_pending_reg <= instr_rvalid_i & ~ready_i;
-          err_pending_reg <= instr_err_i & ~ready_i;
-        end
-        //If we have pending return date or error, and the IF stage is ready.
+        //If we have pending return date or error, and the IF stage is finally ready.
         if ((rvalid_pending_reg || err_pending_reg) && ready_i) begin
+          transaction_ongoing_reg <= 1'b0;  //We can end this transaction.
           rvalid_pending_reg <= 1'b0;
           err_pending_reg <= 1'b0;
-          transaction_ongoing_reg <= 1'b0;  //We can end this transaction.
+        end else if (instr_rvalid_i || instr_err_i) begin  //Return data or error received from bus.
+          addr_o_reg <= instr_adr_reg;
+          rdata_reg  <= instr_rdata_i;
+
+          if (!ready_i) begin
+            rvalid_pending_reg <= instr_rvalid_i & ~(mid_transaction_branch_req | branch_i);
+            err_pending_reg <= instr_err_i & ~(mid_transaction_branch_req | branch_i);
+          end
+
+          //If we have an pending branch request, retire this transaction and
+          //move on to the branch transaction.
+          //If we don't have a pending branch request, retire the transaction if
+          //the IF stage is ready. If the IF stage is not ready, we prolong the
+          //transaction.
+          transaction_ongoing_reg <= ~ready_i & ~(mid_transaction_branch_req | branch_i);
         end
       end
     end
@@ -136,8 +143,8 @@ module ibex_single_prefetch_buffer (
   assign rdata_o = rvalid_pending_reg ? rdata_reg : instr_rdata_i;
   //We don't return data or err to the IF-stage if it's not ready or if we
   //received a mid-transaction branch request.
-  assign valid_o = (instr_rvalid_i | rvalid_pending_reg) & ready_i & ~mid_transaction_branch_req;
-  assign err_o = (instr_err_i | err_pending_reg) & ready_i & ~mid_transaction_branch_req;
+  assign valid_o = (instr_rvalid_i | rvalid_pending_reg) & ready_i & ~(mid_transaction_branch_req | branch_i);
+  assign err_o = (instr_err_i | err_pending_reg) & ready_i & ~(mid_transaction_branch_req | branch_i);
   assign err_plus2_o = 1'b0;  //A single transaction prefetcher can't have plus2 errors.
 
   // Prefetch Buffer Status
