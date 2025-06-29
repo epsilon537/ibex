@@ -54,9 +54,9 @@ module ibex_single_prefetch_buffer (
   state_type_t state_reg, state_next;
   logic [31:0] instr_addr_reg, instr_addr_next;
   logic [31:0] br_pending_addr_reg, br_pending_addr_next;
-  logic [31:0] instr_rdata_reg, instr_rdata_next;
   logic instr_err_reg, instr_err_next;
   logic instr_rvalid_reg, instr_rvalid_next;
+  logic [31:0] instr_rdata_reg;
 
   initial begin
     state_reg = START;
@@ -71,7 +71,6 @@ module ibex_single_prefetch_buffer (
     state_next = state_reg;
     instr_addr_next = instr_addr_reg;
     br_pending_addr_next = br_pending_addr_reg;
-    instr_rdata_next = instr_rdata_reg;
     instr_err_next = instr_err_reg;
     instr_rvalid_next = instr_rvalid_reg;
 
@@ -79,7 +78,6 @@ module ibex_single_prefetch_buffer (
     instr_addr_o = instr_addr_reg;
     valid_o = 1'b0;
     err_o = 1'b0;
-    rdata_o = instr_rdata_reg;
 
     case (state_reg)
       START: begin
@@ -125,7 +123,6 @@ module ibex_single_prefetch_buffer (
           ready_i, branch_i, instr_rvalid_i | instr_err_i
         })
           3'b001: begin
-            instr_rdata_next = instr_rdata_i;
             instr_err_next = instr_err_i;
             instr_rvalid_next = instr_rvalid_i;
             state_next = WAIT_FOR_READY;
@@ -141,7 +138,6 @@ module ibex_single_prefetch_buffer (
           3'b101: begin
             valid_o = instr_rvalid_i;
             err_o = instr_err_i;
-            rdata_o = instr_rdata_i;
             instr_addr_next = instr_addr_reg + 4;
             state_next = START;
           end
@@ -161,7 +157,6 @@ module ibex_single_prefetch_buffer (
         end else if (ready_i) begin
           valid_o = instr_rvalid_reg;
           err_o = instr_err_reg;
-          rdata_o = instr_rdata_reg;
           instr_addr_next = instr_addr_reg + 4;
           state_next = START;
         end
@@ -175,19 +170,19 @@ module ibex_single_prefetch_buffer (
       state_reg <= START;
       instr_addr_reg <= 32'b0;
       br_pending_addr_reg <= 32'b0;
-      instr_rdata_reg <= 32'b0;
       instr_err_reg <= 1'b0;
       instr_rvalid_reg <= 1'b0;
     end else begin
       state_reg <= state_next;
       instr_addr_reg <= instr_addr_next;
       br_pending_addr_reg <= br_pending_addr_next;
-      instr_rdata_reg <= instr_rdata_next;
+      if (instr_rvalid_i) instr_rdata_reg <= instr_rdata_i;
       instr_err_reg <= instr_err_next;
       instr_rvalid_reg <= instr_rvalid_next;
     end
   end
 
+  assign rdata_o = instr_rvalid_i ? instr_rdata_i : instr_rdata_reg;
   assign addr_o = instr_addr_reg;
   assign busy_o = (state_reg == START) ? 1'b0 : 1'b1;
   assign err_plus2_o = 1'b0;
