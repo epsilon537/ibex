@@ -53,7 +53,7 @@ module ibex_single_prefetch_buffer (
 
   state_type_t state_reg, state_next;
   logic [31:0] instr_addr_reg, instr_addr_next;
-  logic [31:0] br_pending_addr_reg, br_pending_addr_next;
+  logic [31:0] br_pending_addr_reg;
   logic instr_err_reg, instr_err_next;
   logic instr_rvalid_reg, instr_rvalid_next;
   logic [31:0] instr_rdata_reg;
@@ -70,7 +70,6 @@ module ibex_single_prefetch_buffer (
   always_comb begin
     state_next = state_reg;
     instr_addr_next = instr_addr_reg;
-    br_pending_addr_next = br_pending_addr_reg;
     instr_err_next = instr_err_reg;
     instr_rvalid_next = instr_rvalid_reg;
 
@@ -103,11 +102,9 @@ module ibex_single_prefetch_buffer (
             state_next = WAIT_FOR_VALID;
           end
           2'b10: begin
-            br_pending_addr_next = addr_i;
             state_next = WAIT_FOR_GRANT_BR_PENDING;
           end
           2'b11: begin
-            br_pending_addr_next = addr_i;
             state_next = WAIT_FOR_VALID_BR_PENDING;
           end
           default: ;
@@ -128,7 +125,6 @@ module ibex_single_prefetch_buffer (
             state_next = WAIT_FOR_READY;
           end
           3'b?10: begin
-            br_pending_addr_next = addr_i;
             state_next = WAIT_FOR_VALID_BR_PENDING;
           end
           3'b?11: begin
@@ -169,13 +165,12 @@ module ibex_single_prefetch_buffer (
     if (!rst_ni) begin
       state_reg <= START;
       instr_addr_reg <= 32'b0;
-      br_pending_addr_reg <= 32'b0;
       instr_err_reg <= 1'b0;
       instr_rvalid_reg <= 1'b0;
     end else begin
       state_reg <= state_next;
       instr_addr_reg <= instr_addr_next;
-      br_pending_addr_reg <= br_pending_addr_next;
+      if (branch_i) br_pending_addr_reg <= addr_i;
       if (instr_rvalid_i) instr_rdata_reg <= instr_rdata_i;
       instr_err_reg <= instr_err_next;
       instr_rvalid_reg <= instr_rvalid_next;
