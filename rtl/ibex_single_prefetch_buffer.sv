@@ -43,12 +43,12 @@ module ibex_single_prefetch_buffer (
     output logic busy_o
 );
   typedef enum logic [2:0] {
-    START = 0,
-    WAIT_FOR_GRANT = 1,
-    WAIT_FOR_GRANT_BR_PENDING = 2,
-    WAIT_FOR_VALID = 3,
-    WAIT_FOR_VALID_BR_PENDING = 4,
-    WAIT_FOR_READY = 5
+    START,
+    WAIT_FOR_GRANT,
+    WAIT_FOR_GRANT_BR_PENDING,
+    WAIT_FOR_VALID,
+    WAIT_FOR_VALID_BR_PENDING,
+    WAIT_FOR_READY
   } state_type_t;
 
   state_type_t state_reg, state_next;
@@ -164,7 +164,6 @@ module ibex_single_prefetch_buffer (
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       state_reg <= START;
-      instr_addr_reg <= 32'b0;
       instr_err_reg <= 1'b0;
       instr_rvalid_reg <= 1'b0;
     end else begin
