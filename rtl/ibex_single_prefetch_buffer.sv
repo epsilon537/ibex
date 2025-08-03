@@ -164,6 +164,9 @@ module ibex_single_prefetch_buffer (
   always_ff @(posedge clk_i or negedge rst_ni) begin
     if (!rst_ni) begin
       state_reg <= START;
+      instr_addr_reg <= 0;
+      br_pending_addr_reg <= 0;
+      instr_rdata_reg <= 0;
       instr_err_reg <= 1'b0;
       instr_rvalid_reg <= 1'b0;
     end else begin
