@@ -75,6 +75,7 @@ module ibex_single_prefetch_buffer (
 
     instr_req_o = 1'b0;
     instr_addr_o = instr_addr_reg;
+    addr_o = instr_addr_reg;
     valid_o = 1'b0;
     err_o = 1'b0;
 
@@ -112,6 +113,7 @@ module ibex_single_prefetch_buffer (
       end
       WAIT_FOR_GRANT_BR_PENDING: begin
         instr_req_o = 1'b1;
+        addr_o = br_pending_addr_reg;
 
         if (instr_gnt_i) state_next = WAIT_FOR_VALID_BR_PENDING;
       end
@@ -141,6 +143,7 @@ module ibex_single_prefetch_buffer (
         endcase
       end
       WAIT_FOR_VALID_BR_PENDING: begin
+        addr_o = br_pending_addr_reg;
         if (instr_rvalid_i) begin
           instr_addr_next = br_pending_addr_reg;
           state_next = WAIT_FOR_GRANT;
@@ -180,7 +183,6 @@ module ibex_single_prefetch_buffer (
   end
 
   assign rdata_o = instr_rvalid_i ? instr_rdata_i : instr_rdata_reg;
-  assign addr_o = instr_addr_reg;
   assign busy_o = (state_reg == START) ? 1'b0 : 1'b1;
   assign err_plus2_o = 1'b0;
 endmodule
